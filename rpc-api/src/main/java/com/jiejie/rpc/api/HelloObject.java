@@ -3,26 +3,37 @@ package com.jiejie.rpc.api;
 import java.io.Serializable;
 
 /**
- * 测试用的实体类，用于在网络中传输
+ * RPC 通信测试用的数据传输对象 (DTO)。
+ * 实现了 {@link Serializable} 接口，确保对象可在网络间进行二进制流传输。
+ * * @author jiejie
  */
 public class HelloObject implements Serializable {
-    // 建议加上 serialVersionUID，保证序列化版本的兼容性
+
+    /** 序列化版本标识，用于保障类结构在序列化与反序列化过程中的版本兼容性 */
     private static final long serialVersionUID = 1L;
 
     private Integer id;
     private String message;
 
-    // 空参构造（序列化框架底层通常需要空参构造，建议养成保留的习惯）
+    /**
+     * 默认无参构造器。
+     * 许多序列化框架（如 Jackson, Hessian）在反序列化时通过反射调用此构造器实例化对象。
+     */
     public HelloObject() {
     }
 
-    // 全参构造
+    /**
+     * 全参构造器，用于快速初始化数据。
+     *
+     * @param id      业务标识 ID
+     * @param message 测试消息内容
+     */
     public HelloObject(Integer id, String message) {
         this.id = id;
         this.message = message;
     }
 
-    // --- 下面是 Getter 和 Setter ---
+    // --- 标准的 Getter/Setter 方法 ---
 
     public Integer getId() {
         return id;

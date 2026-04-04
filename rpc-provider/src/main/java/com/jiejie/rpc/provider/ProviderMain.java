@@ -8,10 +8,10 @@ import com.jiejie.rpc.core.server.RpcServer;
  */
 public class ProviderMain {
     public static void main(String[] args) {
-        // 1. 实例化我们真正提供业务逻辑的服务对象
+        // 1. 实例化真正提供业务逻辑的服务对象
         HelloService helloService = new HelloServiceImpl();
 
-        // 2. 实例化我们刚才写的 RPC 通用服务端
+        // 2. 实例化 RPC 通用服务端
         RpcServer rpcServer = new RpcServer();
 
         // 3. 把服务对象交给框架，并在 9000 端口暴露出去
