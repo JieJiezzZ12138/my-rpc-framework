@@ -1,32 +1,29 @@
 package com.jiejie.rpc.consumer;
 
 import com.jiejie.rpc.api.HelloObject;
-import com.jiejie.rpc.core.client.RpcClient;
-import com.jiejie.rpc.core.entity.RpcRequest;
+import com.jiejie.rpc.api.HelloService;
+import com.jiejie.rpc.core.client.RpcClientProxy;
 
 /**
- * 客户端启动入口
+ * 客户端启动入口（V2.0 代理版）
  */
 public class ConsumerMain {
     public static void main(String[] args) {
-        // 1. 准备好负责网络通信的客户端
-        RpcClient client = new RpcClient();
+        // 1. 创建一个代理工厂对象，告诉它服务端的地址
+        RpcClientProxy proxy = new RpcClientProxy("127.0.0.1", 9000);
 
-        // 2. 【最关键的一步】手动封装请求信息（填信封）
-        // 我们要告诉服务端：去调 com.jiejie.rpc.api.HelloService 接口里的 sayHello 方法
-        RpcRequest request = new RpcRequest();
-        request.setInterfaceName("com.jiejie.rpc.api.HelloService");
-        request.setMethodName("sayHello");
-        // 传入参数值（我们在 API 里定义的实体类）
-        request.setParameters(new Object[]{new HelloObject(123, "你好，我是消费者，这是我的第一次调用！")});
-        // 传入参数类型（防止方法重载找不到）
-        request.setParamTypes(new Class[]{HelloObject.class});
+        // 2. 通过代理工厂，直接获取 HelloService 接口的实例
+        // 注意：这里拿到的其实是一个“假”的实现类，它内部会帮我们发网络请求
+        HelloService helloService = proxy.getProxy(HelloService.class);
 
-        // 3. 发起网络请求（本机测试 IP 用 127.0.0.1，端口是刚才服务端监听的 9000）
-        System.out.println("【客户端】正在发起请求...");
-        Object response = client.sendRequest(request, "127.0.0.1", 9000);
+        // 3. 准备测试数据
+        HelloObject object = new HelloObject(666, "你好！我是 V2.0 代理版的调用！");
 
-        // 4. 打印服务端的返回结果
-        System.out.println("【客户端】收到服务端的响应: " + response);
+        // 4. 像调用本地方法一样自然！
+        // 你点进这个 sayHello 方法，IDEA 甚至会带你跳转到 api 模块的接口定义上
+        String result = helloService.sayHello(object);
+
+        // 5. 打印结果
+        System.out.println("【客户端】收到响应结果: " + result);
     }
 }
