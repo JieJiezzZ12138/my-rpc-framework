@@ -1,45 +1,50 @@
 package com.jiejie.rpc.core.server;
 
 import com.jiejie.rpc.core.entity.RpcRequest;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import com.jiejie.rpc.core.provider.ServiceProvider;
+import java.io.*;
 import java.lang.reflect.Method;
 import java.net.Socket;
 
 /**
- * RPC 请求处理任务。
- * 负责解析 Socket 流中的 RpcRequest，利用反射调用目标方法并回写结果。
+ * RPC 请求处理工作线程。
+ * 负责解析通信协议报文，并通过 ServiceProvider 动态检索目标实例进行反射调用。
  * * @author jiejie
  */
 public class RequestHandlerThread implements Runnable {
 
     private final Socket socket;
-    private final Object service;
+    private final ServiceProvider serviceProvider;
 
-    public RequestHandlerThread(Socket socket, Object service) {
+    public RequestHandlerThread(Socket socket, ServiceProvider serviceProvider) {
         this.socket = socket;
-        this.service = service;
+        this.serviceProvider = serviceProvider;
     }
 
     @Override
     public void run() {
-        // 利用 try-with-resources 确保 Socket 资源在任务结束时自动关闭
+        //线程信息打印
+        String threadName = Thread.currentThread().getName();
+        System.out.println("【Server 日志】当前处理线程: " + threadName + " 正在为客户端服务...");
         try (ObjectInputStream objectInputStream = new ObjectInputStream(socket.getInputStream());
              ObjectOutputStream objectOutputStream = new ObjectOutputStream(socket.getOutputStream())) {
 
-            // 1. 反序列化请求对象
+            // 反序列化请求对象
             RpcRequest request = (RpcRequest) objectInputStream.readObject();
 
-            // 2. 通过反射定位并执行目标方法
+            // 基于请求中的接口名，从注册表动态获取业务实现类
+            Object service = serviceProvider.getService(request.getInterfaceName());
+
+            // 反射定位方法并执行业务逻辑
             Method method = service.getClass().getMethod(request.getMethodName(), request.getParamTypes());
             Object result = method.invoke(service, request.getParameters());
 
-            // 3. 将结果写回输出流
+            // 写回处理结果
             objectOutputStream.writeObject(result);
             objectOutputStream.flush();
 
         } catch (Exception e) {
-            System.err.println("Error occurred during request handling: " + e.getMessage());
+            System.err.println("【线程异常】处理 RPC 请求时发生故障: " + e.getMessage());
             e.printStackTrace();
         }
     }

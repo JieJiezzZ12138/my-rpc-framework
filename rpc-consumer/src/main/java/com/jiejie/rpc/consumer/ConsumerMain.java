@@ -2,6 +2,7 @@ package com.jiejie.rpc.consumer;
 
 import com.jiejie.rpc.api.HelloObject;
 import com.jiejie.rpc.api.HelloService;
+import com.jiejie.rpc.api.PingService;
 import com.jiejie.rpc.core.client.RpcClientProxy;
 
 /**
@@ -11,33 +12,27 @@ import com.jiejie.rpc.core.client.RpcClientProxy;
  * @author jiejie
  */
 public class ConsumerMain {
-
     public static void main(String[] args) {
-        // 1. 初始化代理工厂
         RpcClientProxy proxy = new RpcClientProxy("127.0.0.1", 9000);
         HelloService helloService = proxy.getProxy(HelloService.class);
+        PingService pingService = proxy.getProxy(PingService.class);
 
-        // 2. 模拟 2 个并发请求（可以根据需要增加循环次数）
-        for (int i = 1; i <= 2; i++) {
-            final int requestId = i;
-            new Thread(() -> {
-                long startTime = System.currentTimeMillis();
+        // 线程 1：调用耗时 3 秒的服务
+        new Thread(() -> {
+            long start = System.currentTimeMillis();
+            System.out.println("【线程 1】开始请求 HelloService...");
+            String res = helloService.sayHello(new HelloObject(1, "Timer Test"));
+            long end = System.currentTimeMillis();
+            System.out.println("【线程 1】返回结果: " + res + " | 实际耗时: " + (end - start) + "ms");
+        }).start();
 
-                // 构建测试 DTO
-                HelloObject object = new HelloObject(requestId, "Concurrency Test - Request #" + requestId);
-
-                try {
-                    // 执行 RPC 调用
-                    System.out.println("【线程 " + requestId + "】开始发起远程调用...");
-                    String result = helloService.sayHello(object);
-
-                    long endTime = System.currentTimeMillis();
-                    System.out.println("【线程 " + requestId + "】收到响应: " + result);
-                    System.out.println("【线程 " + requestId + "】总耗时: " + (endTime - startTime) + "ms");
-                } catch (Exception e) {
-                    System.err.println("【线程 " + requestId + "】调用失败: " + e.getMessage());
-                }
-            }).start();
-        }
+        // 线程 2：调用即时响应的服务
+        new Thread(() -> {
+            long start = System.currentTimeMillis();
+            System.out.println("【线程 2】开始请求 PingService...");
+            String res = pingService.ping();
+            long end = System.currentTimeMillis();
+            System.out.println("【线程 2】返回结果: " + res + " | 实际耗时: " + (end - start) + "ms");
+        }).start();
     }
 }
