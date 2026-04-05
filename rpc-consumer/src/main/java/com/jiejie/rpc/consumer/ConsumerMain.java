@@ -5,28 +5,39 @@ import com.jiejie.rpc.api.HelloService;
 import com.jiejie.rpc.core.client.RpcClientProxy;
 
 /**
- * 客户端启动入口（V2.0 代理版本）。
- * 演示通过 JDK 动态代理实现远程服务的透明化调用，屏蔽底层复杂的网络通信逻辑。
- * * @author jiejie
+ * 客户端并发测试入口（V3.0）。
+ * 通过多线程模拟高并发场景，验证服务端线程池的并行处理能力。
+ *
+ * @author jiejie
  */
 public class ConsumerMain {
 
     public static void main(String[] args) {
-        // 1. 初始化客户端代理工厂，指定远程服务节点的网络拓扑地址（IP与端口）
+        // 1. 初始化代理工厂
         RpcClientProxy proxy = new RpcClientProxy("127.0.0.1", 9000);
-
-        // 2. 基于接口类型获取远程服务的代理实例
-        // 采用接口感知的调用模式，符合面向接口编程原则，解耦业务逻辑与基础设施
         HelloService helloService = proxy.getProxy(HelloService.class);
 
-        // 3. 构建测试用的业务数据传输对象 (DTO)
-        HelloObject object = new HelloObject(666, "RPC Remote Call Test - V2.0");
+        // 2. 模拟 2 个并发请求（可以根据需要增加循环次数）
+        for (int i = 1; i <= 2; i++) {
+            final int requestId = i;
+            new Thread(() -> {
+                long startTime = System.currentTimeMillis();
 
-        // 4. 执行远程过程调用 (RPC)
-        // 代理内部自动完成调用拦截、请求封装、序列化及同步网络通信
-        String result = helloService.sayHello(object);
+                // 构建测试 DTO
+                HelloObject object = new HelloObject(requestId, "Concurrency Test - Request #" + requestId);
 
-        // 5. 消费并输出服务端的响应结果
-        System.out.println("Result from server: " + result);
+                try {
+                    // 执行 RPC 调用
+                    System.out.println("【线程 " + requestId + "】开始发起远程调用...");
+                    String result = helloService.sayHello(object);
+
+                    long endTime = System.currentTimeMillis();
+                    System.out.println("【线程 " + requestId + "】收到响应: " + result);
+                    System.out.println("【线程 " + requestId + "】总耗时: " + (endTime - startTime) + "ms");
+                } catch (Exception e) {
+                    System.err.println("【线程 " + requestId + "】调用失败: " + e.getMessage());
+                }
+            }).start();
+        }
     }
 }

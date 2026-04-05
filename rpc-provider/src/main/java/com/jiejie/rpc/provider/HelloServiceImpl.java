@@ -1,19 +1,25 @@
 package com.jiejie.rpc.provider;
 
-import com.jiejie.rpc.api.HelloObject;
 import com.jiejie.rpc.api.HelloService;
+import com.jiejie.rpc.api.HelloObject;
 
 /**
- * 服务端对接口的具体实现
+ * 具体的业务逻辑实现。
+ * 增加 Thread.sleep 以验证 V3.0 服务端的并发处理能力。
  */
 public class HelloServiceImpl implements HelloService {
 
     @Override
     public String sayHello(HelloObject object) {
-        // 打印接收到的客户端消息，证明服务端确实被调用了
-        System.out.println("【服务端】接收到消息: " + object.getMessage());
+        System.out.println("【服务端】接收到消息：" + object.getMessage());
 
-        // 返回处理后的结果给客户端
-        return "服务端已处理你的请求，对象 ID 为: " + object.getId();
+        try {
+            // 模拟业务耗时，验证线程池是否起作用
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        return "RPC 调用成功，已处理消息内容：" + object.getMessage();
     }
 }
