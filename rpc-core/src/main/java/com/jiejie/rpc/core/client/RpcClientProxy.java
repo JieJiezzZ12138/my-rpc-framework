@@ -1,23 +1,25 @@
 package com.jiejie.rpc.core.client;
 
 import com.jiejie.rpc.core.entity.RpcRequest;
-import java.io.*;
-import java.lang.reflect.*;
-import java.net.Socket;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 
 /**
- * 客户端 RPC 动态代理处理器。
- * 自动填充接口元数据至 RpcRequest，实现跨网络调用的透明化。
+ * 客户端 RPC 动态代理处理器 (V5.0 重构版)。
+ * 剥离了底层网络通信（Socket/Netty）细节，通过 RpcClient 接口实现网络层的彻底解耦。
  * * @author jiejie
  */
 public class RpcClientProxy implements InvocationHandler {
 
-    private final String host;
-    private final int port;
+    /**
+     * 核心变动：不再硬编码 host 和 port，而是依赖抽象的 RpcClient 接口。
+     * 这样就可以无缝切换 NettyRpcClient 或其他自定义客户端。
+     */
+    private final RpcClient client;
 
-    public RpcClientProxy(String host, int port) {
-        this.host = host;
-        this.port = port;
+    public RpcClientProxy(RpcClient client) {
+        this.client = client;
     }
 
     @SuppressWarnings("unchecked")
@@ -35,16 +37,7 @@ public class RpcClientProxy implements InvocationHandler {
                 method.getParameterTypes()
         );
 
-        try (Socket socket = new Socket(host, port);
-             ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
-             ObjectInputStream in = new ObjectInputStream(socket.getInputStream())) {
-
-            out.writeObject(request);
-            out.flush();
-            return in.readObject();
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }
+        // 核心变动：将繁琐的网络 I/O 操作委派给具体的 RpcClient 实现类
+        return client.sendRequest(request);
     }
 }
