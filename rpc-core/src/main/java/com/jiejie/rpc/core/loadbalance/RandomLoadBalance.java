@@ -15,6 +15,10 @@ import java.util.Random;
  */
 public class RandomLoadBalance implements LoadBalance {
 
+    @Override
+    public String getStrategyName() {
+        return "random";
+    }
     /** * 随机数生成器。
      * 提示：如果是极高并发场景，未来可考虑升级为 ThreadLocalRandom 以减少线程竞争。
      */

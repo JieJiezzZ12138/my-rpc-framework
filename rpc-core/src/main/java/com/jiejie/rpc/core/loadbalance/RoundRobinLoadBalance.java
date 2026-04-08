@@ -15,6 +15,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class RoundRobinLoadBalance implements LoadBalance {
 
+    @Override
+    public String getStrategyName() {
+        return "roundrobin";
+    }
+
     /**
      * 原子轮询计数器。
      * 使用 AtomicInteger 确保在多线程高并发调用场景下，计数器的递增操作具备原子性（线程安全），避免路由错乱。

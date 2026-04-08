@@ -13,6 +13,10 @@ import java.util.List;
  * @date 2026-04-08
  */
 public interface LoadBalance {
+    /**
+     * 【V7.0 SPI 核心】：返回当前路由策略的名称标识 (如 "random", "roundrobin")
+     */
+    String getStrategyName();
 
     /**
      * 在可用的服务节点列表中，应用路由算法选择一个目标节点。
@@ -21,4 +25,6 @@ public interface LoadBalance {
      * @return 经过算法计算后，最终选定的目标服务地址
      */
     String selectServiceAddress(List<String> addressList);
+
+
 }
