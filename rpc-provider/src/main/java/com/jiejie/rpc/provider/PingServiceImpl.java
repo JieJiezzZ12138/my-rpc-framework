@@ -1,23 +1,26 @@
 package com.jiejie.rpc.provider;
 
 import com.jiejie.rpc.api.PingService;
+import com.jiejie.rpc.core.annotation.RpcService;
+import org.springframework.stereotype.Service;
 
 /**
- * PingService 接口的本地业务实现类
- * 主要用于客户端对服务端进行健康检查、心跳探测以及基础的网络连通性测试
+ * PingService 接口的本地业务实现类 (V11.0 Spring 自动化版)
+ * <p>
+ * 职责：用于业务层面的连通性测试。
+ * 注意：这与底层 Netty 的心跳包不同，它代表了 Spring 容器和业务反射链路的完整畅通。
+ * </p>
  *
  * @author JieJie
- * @date 2026-04-07
+ * @date 2026-04-08
  */
+@RpcService // 👈 让框架自动扫描并注册
+@Service    // 👈 让 Spring 容器管理
 public class PingServiceImpl implements PingService {
 
-    /**
-     * 响应心跳探测请求
-     * * @return 包含版本信息的固定回执字符串 "Pong!"
-     */
     @Override
     public String ping() {
-        // 返回包含 V5.0 标识的响应，用于区分不同版本的容器环境
-        return "Pong! 来自 V5.0 Netty 容器的响应";
+        // 更新回执信息，见证框架的进化
+        return "Pong! 来自 V11.0 Spring 全自动容器的响应";
     }
 }

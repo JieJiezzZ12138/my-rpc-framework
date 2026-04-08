@@ -2,35 +2,37 @@ package com.jiejie.rpc.provider;
 
 import com.jiejie.rpc.api.HelloService;
 import com.jiejie.rpc.api.HelloObject;
+import com.jiejie.rpc.core.annotation.RpcService;
+import org.springframework.stereotype.Service;
 
 /**
- * HelloService 接口的具体业务实现类
- * 该类作为服务端真正的逻辑执行体，被加载至 ServiceProvider 本地容器中
+ * HelloService 接口的具体业务实现类 (V11.0 Spring 自动化版)
+ * <p>
+ * 变更说明：
+ * 1. 增加 @RpcService：由 RpcBeanPostProcessor 识别，自动完成本地 ServiceProvider 挂载和远程 ZK 注册。
+ * 2. 增加 @Service：将该实现类注入 Spring 容器。
+ * </p>
  *
  * @author JieJie
- * @date 2026-04-07
+ * @date 2026-04-08
  */
+@RpcService // 👈 框架灵魂注解：标记该类为 RPC 服务提供者
+@Service    // 👈 Spring 灵魂注解：将其声明为一个 Bean
 public class HelloServiceImpl implements HelloService {
 
-    /**
-     * 处理远程招呼请求
-     * * @param object 客户端传输的业务对象
-     * @return 经过服务端处理后的回执字符串
-     */
     @Override
     public String sayHello(HelloObject object) {
-        System.out.println("【服务端】接收到 RPC 请求，消息内容：" + object.getMessage());
+        // V9.0 心跳包会在 Handler 层被拦截，这里只处理真实的业务逻辑
+        System.out.println("【服务端】正在处理业务请求，内容：" + object.getMessage());
 
         try {
-            // 【核心说明】：此处人为增加 3000 毫秒延迟
-            // 目的：模拟复杂的业务逻辑处理耗时，用于验证 V3.0 及后续版本中服务端线程池/Netty 异步模型的并发处理能力
-            // 验证场景：当多个客户端同时发起调用时，服务端是否能通过多线程并行处理，而非阻塞式排队
+            // 模拟业务耗时（建议保持 3s，用于验证 Netty 异步模型的稳定性）
             Thread.sleep(3000);
         } catch (InterruptedException e) {
-            System.err.println("【服务端异常】业务处理线程被中断：" + e.getMessage());
+            System.err.println("【服务端异常】业务线程中断：" + e.getMessage());
             e.printStackTrace();
         }
 
-        return "RPC 调用成功，已处理消息内容：" + object.getMessage();
+        return "【V11.0 响应】RPC 自动化调用成功，收到：" + object.getMessage();
     }
 }
