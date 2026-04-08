@@ -14,26 +14,41 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.util.AttributeKey;
-import org.springframework.stereotype.Component; // 引入 Spring 注解
+import org.springframework.stereotype.Component;
 
 import java.net.InetSocketAddress;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 基于 Netty 实现的高性能 RPC 客户端 (V11.0 Spring 自动化版)
+ * 基于 Netty 实现的高性能 RPC 客户端 (V13.0 异步多路复用版)
+ * <p>
+ * 核心升级：
+ * 1. 采用 CompletableFuture 替代传统的同步阻塞，支撑高并发异步调用。
+ * 2. 移除 channel.closeFuture().sync()，为后续【长连接池化】打下基础。
+ * 3. 配合 24 字节 Header 中的 requestId 实现响应精准匹配。
+ * </p>
  */
-@Component // 👈 补上这个，让 RpcBeanPostProcessor 的构造函数能自动注入它
+@Component
 public class NettyRpcClient implements RpcClient {
 
     private final ServiceDiscovery serviceDiscovery;
     private static final EventLoopGroup group = new NioEventLoopGroup();
     private static final Bootstrap bootstrap = new Bootstrap();
 
+    /**
+     * 【V13.0 核心】待处理请求集合
+     * Key: requestId, Value: 用于存放结果的异步容器
+     */
+    public static final Map<Long, CompletableFuture<RpcResponse>> UNPROCESSED_REQUESTS = new ConcurrentHashMap<>();
+
     static {
         bootstrap.group(group)
                 .channel(NioSocketChannel.class)
-                .option(ChannelOption.TCP_NODELAY, true);
+                .option(ChannelOption.TCP_NODELAY, true)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 5000);
     }
 
     public NettyRpcClient() {
@@ -42,43 +57,67 @@ public class NettyRpcClient implements RpcClient {
 
     @Override
     public Object sendRequest(RpcRequest rpcRequest) {
+        // 1. 实例化异步结果容器
+        CompletableFuture<RpcResponse> resultFuture = new CompletableFuture<>();
+        // 将请求 ID 与容器绑定，存入全局 Map，等待 NettyClientHandler 唤醒
+        UNPROCESSED_REQUESTS.put(rpcRequest.getRequestId(), resultFuture);
+
         try {
             InetSocketAddress address = serviceDiscovery.lookupService(rpcRequest.getInterfaceName());
             if (address == null) {
+                UNPROCESSED_REQUESTS.remove(rpcRequest.getRequestId());
                 throw new RuntimeException("【RPC 路由失败】未找到服务节点：" + rpcRequest.getInterfaceName());
             }
 
-            // 💡 优化点：在工业级实现中，我们会用 Map<InetSocketAddress, Channel> 缓存连接
-            // 现在的逻辑是每次请求新连，心跳虽然加了，但只有在连接期间有效。
-            // 既然我们要一口气把 9.0 和 10.0 做了，目前的结构足以支撑 Spring 自动注入。
+            // 2. 配置 Pipeline
             bootstrap.handler(new ChannelInitializer<SocketChannel>() {
                 @Override
                 protected void initChannel(SocketChannel ch) {
                     ChannelPipeline pipeline = ch.pipeline();
-                    // V9.0 心跳：10秒写空闲
                     pipeline.addLast(new IdleStateHandler(0, 10, 0, TimeUnit.SECONDS));
+
                     Serializer serializer = SpiSerializerFactory.getSerializer();
+                    // V13.0：24 字节 Header 编解码器
                     pipeline.addLast(new RpcEncoder(serializer));
                     pipeline.addLast(new RpcDecoder(RpcResponse.class, serializer));
                     pipeline.addLast(new NettyClientHandler());
                 }
             });
 
-            ChannelFuture future = bootstrap.connect(address.getHostName(), address.getPort()).sync();
+            // 3. 异步建立连接
+            ChannelFuture future = bootstrap.connect(address).sync();
             Channel channel = future.channel();
 
-            if (channel != null && channel.isActive()) {
-                channel.writeAndFlush(rpcRequest);
-                channel.closeFuture().sync();
-                AttributeKey<Object> key = AttributeKey.valueOf("rpcResponse");
-                return channel.attr(key).get();
+            if (channel.isActive()) {
+                // 4. 发送请求，发送完立即退出，不阻塞 IO 线程
+                channel.writeAndFlush(rpcRequest).addListener((ChannelFutureListener) f -> {
+                    if (f.isSuccess()) {
+                        System.out.println("【客户端】请求发送成功，ID: " + rpcRequest.getRequestId());
+                    } else {
+                        f.channel().close();
+                        resultFuture.completeExceptionally(f.cause());
+                        System.err.println("【客户端】发送请求失败: " + f.cause());
+                    }
+                });
+
+                // 5. 【关键】同步阻塞直到 resultFuture 被 NettyClientHandler 填入结果
+                // 设置 5 秒超时，防止服务端宕机导致客户端永久挂起
+                RpcResponse rpcResponse = resultFuture.get(5, TimeUnit.SECONDS);
+
+                // 拿到结果后，检查业务状态
+                if (rpcResponse == null || rpcResponse.getCode() != 200) {
+                    throw new RuntimeException("【RPC 调用异常】" + (rpcResponse != null ? rpcResponse.getMessage() : "无响应"));
+                }
+                return rpcResponse.getData();
+
             } else {
-                throw new RuntimeException("【客户端】连接已失效");
+                throw new RuntimeException("【客户端】连接不可用");
             }
 
-        } catch (InterruptedException e) {
+        } catch (Exception e) {
+            UNPROCESSED_REQUESTS.remove(rpcRequest.getRequestId());
             Thread.currentThread().interrupt();
-            return null;
+            throw new RuntimeException("【客户端】运行期异常", e);
         }
     }
 }

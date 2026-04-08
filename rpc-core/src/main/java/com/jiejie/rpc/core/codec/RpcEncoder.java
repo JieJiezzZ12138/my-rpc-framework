@@ -1,46 +1,60 @@
 package com.jiejie.rpc.core.codec;
 
+import com.jiejie.rpc.core.entity.ProtocolConstants;
+import com.jiejie.rpc.core.entity.RpcRequest;
+import com.jiejie.rpc.core.entity.RpcResponse;
 import com.jiejie.rpc.core.serialize.Serializer;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
 
 /**
- * 自定义 RPC 通信协议编码器 (Netty 出站管道组件)
- * <p>
- * 痛点背景：TCP 协议底层是无边界的字节流（水管模式），高并发下极易出现“粘包”现象。
- * 协议设计：采用经典的 [定长报文头 + 变长报文体] 封包协议。
- * <br>
- * 数据包结构：
- * +----------------+-----------------------+
- * | Length(4 Byte) | Payload(Actual Bytes) |
- * +----------------+-----------------------+
- * </p>
- *
- * @author JieJie
- * @date 2026-04-08
+ * 自定义协议编码器 (V13.0 异步多路复用版)
+ * 协议头扩容至 24 字节，新增 8 字节 Request ID 字段
  */
 public class RpcEncoder extends MessageToByteEncoder<Object> {
 
-    // 通过 SPI 动态注入的序列化引擎（如 JSON, Kryo）
     private final Serializer serializer;
 
     public RpcEncoder(Serializer serializer) {
         this.serializer = serializer;
     }
 
-    /**
-     * 将 Java 对象编码为自定义协议格式的字节流。
-     */
     @Override
     protected void encode(ChannelHandlerContext ctx, Object msg, ByteBuf out) {
-        // 1. 调用底层的 SPI 序列化引擎，将对象转化为字节数组
-        byte[] payloadBytes = serializer.serialize(msg);
+        // 1. 写入魔数 (4 bytes)
+        out.writeBytes(ProtocolConstants.MAGIC_NUMBER);
 
-        // 2. 写入 Header：将数据包的实际长度写入缓冲区 (int 类型严格占用 4 个字节)
-        out.writeInt(payloadBytes.length);
+        // 2. 写入版本号 (1 byte)
+        out.writeByte(ProtocolConstants.VERSION);
 
-        // 3. 写入 Body：将真正的序列化数据排在长度之后发出去
-        out.writeBytes(payloadBytes);
+        // 3. 写入序列化代码 (1 byte)
+        out.writeByte(serializer.getSerializerCode());
+
+        // 4. 写入消息类型 (1 byte)
+        byte msgType = (msg instanceof RpcRequest) ? ProtocolConstants.REQUEST_TYPE : ProtocolConstants.RESPONSE_TYPE;
+        out.writeByte(msgType);
+
+        // 5. 写入状态码 (1 byte)
+        out.writeByte(ProtocolConstants.STATUS_SUCCESS);
+
+        // 6. 【V13.0 新增】写入 Request ID (8 bytes)
+        // 从实体类中提取 ID 并写入 Header
+        long requestId = (msg instanceof RpcRequest)
+                ? ((RpcRequest) msg).getRequestId()
+                : ((RpcResponse) msg).getRequestId();
+        out.writeLong(requestId);
+
+        // 7. 序列化业务 Body
+        byte[] body = serializer.serialize(msg);
+
+        // 8. 写入包体长度 (4 bytes)
+        out.writeInt(body.length);
+
+        // 9. 写入预留字段 (4 bytes)
+        out.writeInt(0);
+
+        // 10. 写入业务 Body 数据
+        out.writeBytes(body);
     }
 }

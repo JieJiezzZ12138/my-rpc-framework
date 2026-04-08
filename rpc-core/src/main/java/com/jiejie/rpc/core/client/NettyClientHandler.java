@@ -6,60 +6,82 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.timeout.IdleState;
 import io.netty.handler.timeout.IdleStateEvent;
-import io.netty.util.AttributeKey;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Netty 客户端业务处理器 (V11.0 心跳保活与自动重连版)
+ * Netty 客户端业务处理器 (V13.0 异步多路复用版)
  * <p>
- * 职责：
- * 1. 解析 RpcResponse 响应结果。
- * 2. 监听空闲状态事件，主动向服务端发送心跳包 (V9.0)。
+ * 核心设计：
+ * 1. 响应分发：利用 requestId 从全局 Map 中寻找对应的 CompletableFuture。
+ * 2. 异步唤醒：通过 future.complete() 机制，实现 IO 线程对业务线程的非阻塞通知。
+ * 3. 连接复用：读取数据后不再关闭通道，支持单条 TCP 链路上的并发交替请求。
  * </p>
  *
  * @author JieJie
- * @date 2026-04-08
  */
 public class NettyClientHandler extends SimpleChannelInboundHandler<RpcResponse> {
 
+    /**
+     * 收到服务端响应时的回调
+     */
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, RpcResponse response) {
-        AttributeKey<Object> key = AttributeKey.valueOf("rpcResponse");
+        long requestId = response.getRequestId();
 
-        if (response.getCode() != null && response.getCode() == 200) {
-            ctx.channel().attr(key).set(response.getData());
+        // 【关键】从全局存根中移除并获取该请求的 Future
+        // remove 是原子操作，确保在高并发下每个响应只被处理一次
+        CompletableFuture<RpcResponse> future = NettyRpcClient.UNPROCESSED_REQUESTS.remove(requestId);
+
+        if (future != null) {
+            // 唤醒在 NettyRpcClient 中调用 get() 的业务线程
+            future.complete(response);
+            System.out.println("【客户端】成功匹配响应包，RequestId: " + requestId);
         } else {
-            System.err.println("【客户端】服务端返回异常：" + response.getMessage());
-            ctx.channel().attr(key).set(null);
+            // 可能是因为客户端超时已经自行移除了该 ID，或者收到了错误的包
+            System.err.println("【客户端】收到未识别或已超时的响应，RequestId: " + requestId);
         }
 
-        // 目前仍保留 close 以唤醒 NettyRpcClient 中的 closeFuture.sync()
-        // 后续引入 CompletableFuture 后，这里将不再 close 而是直接 complete
-        ctx.close();
+        // V13.0 严禁在此处调用 ctx.close()，否则多路复用长连接会失效
     }
 
     /**
-     * 【V9.0 核心】：处理心跳事件
+     * 处理 Netty 事件（心跳、连接状态等）
      */
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof IdleStateEvent) {
             IdleState state = ((IdleStateEvent) evt).state();
             if (state == IdleState.WRITER_IDLE) {
-                // 10秒没写数据了，发个心跳包过去
-                System.out.println("【客户端】检测到写空闲，正在发送心跳包维持连接...");
-                // 构造一个特殊的心跳请求（methodName 设为 heartbeat）
+                System.out.println("【客户端】发送心跳包以维持长连接...");
+
+                // 构造心跳包
                 RpcRequest heartbeat = new RpcRequest();
                 heartbeat.setMethodName("heartbeat");
-                ctx.writeAndFlush(heartbeat);
+                // 确保心跳包也有 ID，满足 24 字节 Encoder 的要求
+                // (如果 RpcRequest 无参构造函数没设 ID，建议手动 set 一个 0)
+                heartbeat.setRequestId(0L);
+
+                ctx.writeAndFlush(heartbeat).addListener(f -> {
+                    if (!f.isSuccess()) {
+                        System.err.println("【客户端】心跳发送失败，准备断开连接重连");
+                        // 直接使用当前的 ChannelHandlerContext 来关闭通道
+                        ctx.channel().close();
+                    }
+                });
             }
         } else {
             super.userEventTriggered(ctx, evt);
         }
     }
 
+    /**
+     * 异常处理：在异步模式下，异常不仅要打印，还应该通知对应的 Future
+     */
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        System.err.println("【客户端】网络异常：" + cause.getMessage());
+        System.err.println("【客户端】网络链路异常: " + cause.getMessage());
+        // 发生异常时关闭连接，触发下一次请求时的重连逻辑
         ctx.close();
     }
 }

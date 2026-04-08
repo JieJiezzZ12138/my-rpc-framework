@@ -1,12 +1,13 @@
 package com.jiejie.rpc.core.entity;
 
 import java.io.Serializable;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * RPC 请求协议报文实体 (V8.0 序列化重构版)
+ * RPC 请求协议报文实体 (V13.0 异步多路复用版)
  * <p>
- * 封装了接口全限定名、方法名及参数元数据，支撑服务端实现动态路由分发。
- * 新增了无参构造函数与 Setter 方法，以完美兼容 Jackson 等基于反射的 JSON 序列化框架。
+ * 核心升级：新增 requestId 字段。
+ * 在长连接复用场景下，用于匹配异步返回的响应包，实现非阻塞通讯。
  * </p>
  *
  * @author JieJie
@@ -14,7 +15,13 @@ import java.io.Serializable;
 public class RpcRequest implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    /** 目标接口的全限定名，用于服务端在注册中心检索实例 */
+    // 用于生成全局唯一的请求 ID
+    private static final AtomicLong ID_GENERATOR = new AtomicLong(0);
+
+    /** 请求唯一标识码 (V13.0 核心) */
+    private long requestId;
+
+    /** 目标接口的全限定名 */
     private String interfaceName;
 
     /** 目标方法名 */
@@ -23,19 +30,21 @@ public class RpcRequest implements Serializable {
     /** 实际调用的参数值 */
     private Object[] parameters;
 
-    /** 参数的 Class 类型数组，用于反射时精准匹配重载方法 */
+    /** 参数的 Class 类型数组 */
     private Class<?>[] paramTypes;
 
-    // ==========================================
-    // 【V8.0 核心修复】：必须提供的无参构造函数！
-    // Jackson 等框架在反序列化时，会先调用此构造器创建一个“空壳”对象，
-    // 然后再通过反射或 Setter 方法把解析出来的 JSON 值塞进去。
-    // ==========================================
+    /**
+     * 无参构造函数：兼容 Jackson 反序列化
+     */
     public RpcRequest() {
     }
 
-    // 原本的全参构造函数保留，方便客户端组装请求时使用
+    /**
+     * 全参构造函数：供客户端组装请求使用
+     * 自动生成唯一的 requestId
+     */
     public RpcRequest(String interfaceName, String methodName, Object[] parameters, Class<?>[] paramTypes) {
+        this.requestId = ID_GENERATOR.incrementAndGet();
         this.interfaceName = interfaceName;
         this.methodName = methodName;
         this.parameters = parameters;
@@ -45,6 +54,9 @@ public class RpcRequest implements Serializable {
     // ==========================================
     // Getters & Setters
     // ==========================================
+    public long getRequestId() { return requestId; }
+    public void setRequestId(long requestId) { this.requestId = requestId; }
+
     public String getInterfaceName() { return interfaceName; }
     public void setInterfaceName(String interfaceName) { this.interfaceName = interfaceName; }
 

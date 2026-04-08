@@ -1,1 +1,2 @@
-com.jiejie.rpc.core.serialize.JsonSerializer
+com.jiejie.rpc.core.serialize.impl.JsonSerializer
+com.jiejie.rpc.core.serialize.impl.KryoSerializer
