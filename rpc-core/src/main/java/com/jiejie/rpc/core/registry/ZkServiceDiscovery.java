@@ -1,51 +1,57 @@
 package com.jiejie.rpc.core.registry;
 
+import com.jiejie.rpc.core.loadbalance.LoadBalance;
+import com.jiejie.rpc.core.loadbalance.RandomLoadBalance;
+import com.jiejie.rpc.core.loadbalance.RoundRobinLoadBalance;
 import com.jiejie.rpc.core.util.CuratorUtils;
+import com.jiejie.rpc.core.util.PropertiesUtil;
 import org.apache.curator.framework.CuratorFramework;
+
 import java.net.InetSocketAddress;
 import java.util.List;
 
 /**
- * 基于 Zookeeper 的服务发现实现类
- * 客户端通过此类从 ZK 注册中心获取远程服务的真实网络地址
+ * 基于 Zookeeper 的服务发现实现类 (V6.5 动态配置版)
  *
  * @author JieJie
- * @date 2026-04-07
+ * @date 2026-04-08
  */
 public class ZkServiceDiscovery implements ServiceDiscovery {
 
-    /**
-     * 根据服务名称查找可用的服务端地址
-     * * @param serviceName 接口全限定名 (例如: com.jiejie.rpc.api.HelloService)
-     * @return 包含 IP 和端口的服务端地址对象
-     */
+    private final LoadBalance loadBalance;
+
+    public ZkServiceDiscovery() {
+        // 1. 从配置文件中读取负载均衡策略，默认使用 "random"
+        String strategy = PropertiesUtil.getString("rpc.loadbalance.strategy", "random");
+
+        // 2. 根据配置动态实例化对应的策略类 (简单工厂模式雏形)
+        if ("roundrobin".equalsIgnoreCase(strategy)) {
+            this.loadBalance = new RoundRobinLoadBalance();
+            System.out.println("【服务发现】已初始化 [轮询 - RoundRobin] 负载均衡器");
+        } else {
+            this.loadBalance = new RandomLoadBalance();
+            System.out.println("【服务发现】已初始化 [随机 - Random] 负载均衡器");
+        }
+    }
+
     @Override
     public InetSocketAddress lookupService(String serviceName) {
+        // ... (下方的 lookupService 代码完全保持不变，不要改动) ...
         try {
-            // 1. 获取已启动的 Zookeeper 客户端
             CuratorFramework zkClient = CuratorUtils.getZkClient();
-
-            // 2. 拼接服务路径：/my-rpc/接口名
             String servicePath = "/my-rpc/" + serviceName;
 
-            // 3. 获取该路径下的所有子节点 (即所有注册在该接口下的服务端 IP:Port 列表)
             List<String> children = zkClient.getChildren().forPath(servicePath);
+
             if (children == null || children.isEmpty()) {
                 throw new RuntimeException("【ZK 异常】未找到任何可用的服务提供者：" + serviceName);
             }
 
-            // 4. 【简易负载均衡】：目前直接取服务列表中的第一个地址
-            // 提示：V6.5 版本将在此处引入 Random/RoundRobin 等复杂的负载均衡算法
-            String address = children.get(0);
-            System.out.println("【ZK 发现】已成功匹配服务地址：" + address);
+            String address = loadBalance.selectServiceAddress(children);
+            System.out.println("【ZK 发现】集群节点列表: " + children + " -> 最终选择: " + address);
 
-            // 5. 将字符串格式的地址 (如 "127.0.0.1:9000") 拆分并解析为 InetSocketAddress
-            // 注意：此处 address 格式需与注册时保持一致
             String[] parts = address.split(":");
-            String host = parts[0];
-            int port = Integer.parseInt(parts[1]);
-
-            return new InetSocketAddress(host, port);
+            return new InetSocketAddress(parts[0], Integer.parseInt(parts[1]));
 
         } catch (Exception e) {
             System.err.println("【ZK 发现失败】查询过程出现异常：" + e.getMessage());
