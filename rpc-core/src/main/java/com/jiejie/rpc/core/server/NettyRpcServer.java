@@ -1,25 +1,30 @@
 package com.jiejie.rpc.core.server;
 
+import com.jiejie.rpc.core.codec.RpcDecoder;
+import com.jiejie.rpc.core.codec.RpcEncoder;
+import com.jiejie.rpc.core.entity.RpcRequest;
 import com.jiejie.rpc.core.provider.ServiceProvider;
 import com.jiejie.rpc.core.registry.ServiceRegistry;
 import com.jiejie.rpc.core.registry.ZkServiceRegistry;
+import com.jiejie.rpc.core.serialize.Serializer;
+import com.jiejie.rpc.core.serialize.SpiSerializerFactory;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.serialization.ClassResolvers;
-import io.netty.handler.codec.serialization.ObjectDecoder;
-import io.netty.handler.codec.serialization.ObjectEncoder;
 
 import java.net.InetSocketAddress;
 
 /**
- * 基于 Netty 实现的高性能 RPC 服务端引擎 (V6.0 分布式版)
- * 职责：启动网络监听服务，并将本地服务自动同步至 Zookeeper 注册中心
+ * 基于 Netty 实现的高性能 RPC 服务端引擎 (V8.0 高性能通信与 SPI 序列化版)
+ * <p>
+ * 职责：启动网络监听服务，并将本地服务自动同步至 Zookeeper 注册中心。
+ * 架构更新：废弃原生 Java 序列化，引入 SPI 动态序列化引擎，并内置自定义协议编解码器解决 TCP 粘包问题。
+ * </p>
  *
  * @author JieJie
- * @date 2026-04-07
+ * @date 2026-04-08
  */
 public class NettyRpcServer implements RpcServer {
 
@@ -49,7 +54,7 @@ public class NettyRpcServer implements RpcServer {
      */
     @Override
     public void start(ServiceProvider serviceProvider, int port) {
-        // 1. 【V6.0 核心逻辑】：服务同步
+        // 1. 服务同步
         // 遍历本地容器中的所有接口名，将其批量注册到 Zookeeper 的临时节点上
         for (String serviceName : serviceProvider.getAllServiceNames()) {
             serviceRegistry.register(serviceName, new InetSocketAddress(host, port));
@@ -70,18 +75,25 @@ public class NettyRpcServer implements RpcServer {
                         @Override
                         protected void initChannel(SocketChannel ch) {
                             ChannelPipeline pipeline = ch.pipeline();
-                            // 添加对象编码器：将返回结果序列化为二进制流发送
-                            pipeline.addLast(new ObjectEncoder());
-                            // 添加对象解码器：将接收到的二进制流还原为 RpcRequest 对象
-                            pipeline.addLast(new ObjectDecoder(ClassResolvers.cacheDisabled(null)));
-                            // 添加自定义业务处理器：负责反射调用本地方法
+
+                            // 【V8.0 核心改造】：动态获取 SPI 注入的序列化器
+                            Serializer serializer = SpiSerializerFactory.getSerializer();
+
+                            // 【入站组件】：解决 TCP 粘包/半包，并将纯净的字节流解码为对象
+                            // 注意：服务端接收的是客户端发来的 Request，所以目标反序列化类是 RpcRequest.class！
+                            pipeline.addLast(new RpcDecoder(RpcRequest.class, serializer));
+
+                            // 【出站组件】：将业务执行结果 RpcResponse 编码成带有 4 字节长度头的二进制流返回给客户端
+                            pipeline.addLast(new RpcEncoder(serializer));
+
+                            // 【入站后置组件】：获取到安全的 RpcRequest 后，交由业务处理器反射调用本地方法
                             pipeline.addLast(new NettyServerHandler(serviceProvider));
                         }
                     });
 
             // 4. 绑定端口并同步启动
             ChannelFuture future = serverBootstrap.bind(port).sync();
-            System.out.println("【RPC 服务端】V6.0 引擎已就绪，正在端口 " + port + " 监听请求...");
+            System.out.println("【RPC 服务端】V8.0 引擎已就绪，正在端口 " + port + " 监听请求...");
 
             // 5. 阻塞直至频道关闭（等待服务端正常停止）
             future.channel().closeFuture().sync();
