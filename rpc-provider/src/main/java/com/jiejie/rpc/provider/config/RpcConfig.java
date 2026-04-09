@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 public class RpcConfig {
+
     @Bean
     public ServiceProvider serviceProvider() {
         return new DefaultServiceProvider();
@@ -21,8 +22,13 @@ public class RpcConfig {
         return new NettyRpcClient();
     }
 
+    /**
+     * 定义 RpcServer Bean
+     * 核心改动：将 127.0.0.1 替换为阿里云公网 IP，实现跨网服务注册与暴露
+     */
     @Bean
     public RpcServer rpcServer(ServiceProvider serviceProvider) {
-        return new NettyRpcServer("127.0.0.1", 9000, serviceProvider);
+        // 参数说明：阿里云公网IP, 监听端口, 服务注册器
+        return new NettyRpcServer("39.107.74.108", 9000, serviceProvider);
     }
 }

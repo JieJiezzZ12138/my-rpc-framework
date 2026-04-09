@@ -9,31 +9,28 @@ import org.springframework.context.annotation.ComponentScan;
 import javax.annotation.Resource;
 
 /**
- * RPC 服务提供方启动入口 (V11.0 Spring 自动化 + 心跳保活版)
- * <p>
- * 职责：
- * 1. 依靠 @SpringBootApplication 启动 Spring 容器。
- * 2. 依靠 @ComponentScan 触发 RpcBeanPostProcessor 的自动化扫描。
- * 3. 依靠 CommandLineRunner 在容器就绪后自动“点火” Netty。
- * </p>
+ * RPC 服务提供方启动入口 (V14.5 公网部署版)
  */
 @SpringBootApplication
-@ComponentScan(basePackages = "com.jiejie.rpc") // 核心：必须扫到 core 里的 BeanPostProcessor
+@ComponentScan(basePackages = "com.jiejie.rpc")
 public class ProviderMain1 implements CommandLineRunner {
 
-    // 从 Spring 容器中自动获取已经配置好的 RpcServer
+    // 这里注入的是我们在下文配置类中定义的公网版 RpcServer
     @Resource
     private RpcServer rpcServer;
 
     public static void main(String[] args) {
-        // 启动 Spring Boot
         SpringApplication.run(ProviderMain1.class, args);
     }
 
     @Override
     public void run(String... args) {
-        // 当所有 @RpcService 标记的类都被自动注册到 ZK 后，开启网络监听
-        System.out.println("【V11.0 启动】Spring 容器初始化完毕，正在开启 Netty 引擎...");
+        System.out.println("=================================================");
+        System.out.println("【公网部署】正在阿里云环境开启 Netty 引擎...");
+        System.out.println("【监听地址】39.107.74.108:9000");
+        System.out.println("=================================================");
+
+        // 开启网络监听
         rpcServer.start();
     }
 }
