@@ -6,30 +6,38 @@ import org.apache.curator.retry.ExponentialBackoffRetry;
 
 /**
  * Zookeeper 客户端工具类 (基于 Apache Curator)
- * 修复版：强制对准阿里云中介所
+ * 进化版：支持动态配置地址，拒绝硬编码
  */
 public class CuratorUtils {
 
-    // 【核心修复】把写死的本地地址，换成阿里云的公网 ZK 地址！
-    private static final String ZK_ADDRESS = "39.107.74.108:2181";
+    // 默认地址（内网回环），会被 Spring 扫描到的配置覆盖
+    private static String zkAddress = "127.0.0.1:2181";
 
     private static CuratorFramework zkClient;
+
+    /**
+     * 提供给外部（如 RpcBeanPostProcessor）在启动时设置真实的 ZK 地址
+     */
+    public static void setZkAddress(String address) {
+        zkAddress = address;
+    }
 
     public static CuratorFramework getZkClient() {
         if (zkClient != null && zkClient.getState() == org.apache.curator.framework.imps.CuratorFrameworkState.STARTED) {
             return zkClient;
         }
 
+        // 指数退避重试策略
         ExponentialBackoffRetry retryPolicy = new ExponentialBackoffRetry(1000, 3);
 
         zkClient = CuratorFrameworkFactory.builder()
-                .connectString(ZK_ADDRESS)    // 现在它终于知道去连阿里云了
+                .connectString(zkAddress) // 使用变量而不是硬编码
                 .retryPolicy(retryPolicy)
                 .build();
 
         zkClient.start();
 
-        System.out.println("【ZK 工具类】已成功建立与 Zookeeper 的连接会话 (" + ZK_ADDRESS + ")");
+        System.out.println("【ZK 工具类】正在尝试连接 Zookeeper -> " + zkAddress);
         return zkClient;
     }
 }
