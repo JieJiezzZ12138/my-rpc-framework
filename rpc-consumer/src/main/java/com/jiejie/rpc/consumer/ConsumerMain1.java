@@ -15,7 +15,7 @@ import com.jiejie.rpc.core.client.RpcClientProxy;
  *
  * @author JieJie
  */
-public class ConsumerMain {
+public class ConsumerMain1 {
     public static void main(String[] args) {
         // 1. 初始化 Netty 传输客户端 (V8.0 引擎，底层已切换为长连接 + 自定义协议 + JSON 序列化)
         RpcClient nettyClient = new NettyRpcClient();
