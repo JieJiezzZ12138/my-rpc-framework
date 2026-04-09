@@ -23,10 +23,10 @@ public class RpcBeanPostProcessor implements BeanPostProcessor {
     private final RpcClient rpcClient;
     private final ServiceRegistry serviceRegistry;
 
-    // 幂等性检查：记录本进程已注册的服务，防止 Spring 重复初始化导致的 NodeExists 报错
     private final Set<String> registeredServices = ConcurrentHashMap.newKeySet();
 
-    private static final String HOST = "127.0.0.1";
+    // 【核心修复】同样把底层注册时写死的 127.0.0.1 换掉
+    private static final String HOST = "39.107.74.108";
     private static final int PORT = 9000;
 
     public RpcBeanPostProcessor(ServiceProvider serviceProvider, RpcClient rpcClient) {
@@ -46,15 +46,12 @@ public class RpcBeanPostProcessor implements BeanPostProcessor {
 
             String serviceName = interfaceClass.getCanonicalName();
 
-            // 只有当该服务未被注册过时，才执行注册逻辑
             if (!registeredServices.contains(serviceName)) {
-                // 1. 注册到本地容器
                 serviceProvider.register(bean, (Class) interfaceClass);
-                // 2. 注册到 Zookeeper
                 serviceRegistry.register(serviceName, new InetSocketAddress(HOST, PORT));
 
                 registeredServices.add(serviceName);
-                System.out.println("【V11.0 自动化】已成功暴露服务: " + interfaceClass.getSimpleName());
+                System.out.println("【V11.0 自动化】已成功暴露服务: " + interfaceClass.getSimpleName() + " 到 " + HOST);
             }
         }
         return bean;
